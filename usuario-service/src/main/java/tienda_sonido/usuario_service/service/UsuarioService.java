@@ -10,6 +10,9 @@ import tienda_sonido.usuario_service.dto.LoginResponse;
 import tienda_sonido.usuario_service.dto.UsuarioRequest;
 import tienda_sonido.usuario_service.dto.UsuarioResponse;
 import tienda_sonido.usuario_service.dto.UsuarioUpdateRequest;
+import tienda_sonido.usuario_service.exception.CredencialesInvalidasException;
+import tienda_sonido.usuario_service.exception.UsuarioDuplicadoException;
+import tienda_sonido.usuario_service.exception.UsuarioNoEncontradoException;
 import tienda_sonido.usuario_service.mapper.UsuarioMapper;
 import tienda_sonido.usuario_service.model.Rol;
 import tienda_sonido.usuario_service.model.Usuario;
@@ -36,11 +39,11 @@ public class UsuarioService {
         Usuario nuevoUsuario = usuarioMapper.toEntity(request);
 
         if (usuarioRepository.existsByCorreo(nuevoUsuario.getCorreo())) {
-            throw new IllegalArgumentException("El correo ya está registrado");
+            throw new UsuarioDuplicadoException("El correo ya está registrado");
         }
 
         if (usuarioRepository.existsByRun(nuevoUsuario.getRun())) {
-            throw new IllegalArgumentException("El RUN ya está registrado");
+            throw new UsuarioDuplicadoException("El RUN ya está registrado");
         }
 
         nuevoUsuario.setRol(Rol.CLIENTE);
@@ -55,10 +58,10 @@ public class UsuarioService {
     }
 
     public LoginResponse iniciarSesion(LoginRequest request) {
-        Usuario usuarioLogin = usuarioRepository.findByCorreo(request.getCorreo()).orElseThrow(() -> new IllegalArgumentException("Credenciales incorrectas"));
+        Usuario usuarioLogin = usuarioRepository.findByCorreo(request.getCorreo()).orElseThrow(() -> new CredencialesInvalidasException("Credenciales incorrectas"));
         
         if (!passwordEncoder.matches(request.getPassword(), usuarioLogin.getPassword())) {
-            throw new IllegalArgumentException("Credenciales incorrectas");
+            throw new CredencialesInvalidasException("Credenciales incorrectas");
         }
 
         String token = jwtService.generarToken(usuarioLogin);
@@ -79,14 +82,14 @@ public class UsuarioService {
     }
 
     public UsuarioResponse actualizarUsuario(Long id, UsuarioUpdateRequest update) {
-        Usuario usuarioActualizar = usuarioRepository.findById(id).orElseThrow(() -> new IllegalArgumentException("Usuario no encontrado"));
+        Usuario usuarioActualizar = usuarioRepository.findById(id).orElseThrow(() -> new UsuarioNoEncontradoException("Usuario no encontrado"));
 
             if (!usuarioActualizar.getCorreo().equals(update.getCorreo()) && usuarioRepository.existsByCorreo(update.getCorreo())) {
-                throw new IllegalArgumentException("El correo ya está registrado");
+                throw new UsuarioDuplicadoException("El correo ya está registrado");
             }
 
             if (!usuarioActualizar.getRun().equals(update.getRun()) && usuarioRepository.existsByRun(update.getRun())) {
-                throw new IllegalArgumentException("El RUN ya está registrado");
+                throw new UsuarioDuplicadoException("El RUN ya está registrado");
             }
         
         usuarioMapper.actualizarUsuario(update, usuarioActualizar);
@@ -99,7 +102,7 @@ public class UsuarioService {
     public void eliminarUsuario(Long id) {
 
         if (!usuarioRepository.existsById(id)) {
-            throw new IllegalArgumentException("Usuario no encontrado");
+            throw new UsuarioNoEncontradoException("Usuario no encontrado");
         }
 
         usuarioRepository.deleteById(id);
