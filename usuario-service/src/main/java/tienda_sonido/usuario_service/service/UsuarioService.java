@@ -71,6 +71,12 @@ public class UsuarioService {
     
 // ***** METODOS DE ADMIN ***** //
 
+    public UsuarioResponse buscarUsuarioPorId(Long id) {
+        Usuario usuario = usuarioRepository.findById(id).orElseThrow(() -> new UsuarioNoEncontradoException("Usuario no encontrado"));
+
+        return usuarioMapper.toResponse(usuario);
+    }
+
     public List<UsuarioResponse> listarUsuarios() {
         List<Usuario> listaUsuarios = usuarioRepository.findAll();
 
