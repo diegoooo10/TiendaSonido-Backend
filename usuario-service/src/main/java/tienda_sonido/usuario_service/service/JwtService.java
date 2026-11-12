@@ -30,6 +30,8 @@ public class JwtService {
         JwtClaimsSet claims = JwtClaimsSet.builder()
             .subject(usuario.getCorreo())
             .claim("rol", usuario.getRol().name())
+            .claim("nombre", usuario.getNombre())
+            .claim("apellidos", usuario.getApellido())
             .issuedAt(ahora)
             .expiresAt(expiracion)
             .build();
