@@ -10,7 +10,6 @@ Microservicio REST desarrollado con **Spring Boot** para gestionar usuarios y au
 - MySQL
 - JSON Web Tokens (JWT)
 - Bean Validation y Lombok
-- SpringDoc OpenAPI / Swagger UI
 - Docker
 
 ## Funcionalidades
@@ -63,7 +62,7 @@ Las respuestas públicas deben excluir la contraseña y otros datos sensibles in
 
 ## API REST
 
-Los siguientes son los **tipos de operaciones implementadas**. Consulta los controladores o Swagger UI para confirmar las rutas exactas antes de consumir la API.
+Los siguientes son los **tipos de operaciones implementadas**. Consulta los controladores para confirmar las rutas exactas antes de consumir la API.
 
 | Operación | Método HTTP | Descripción |
 | --- | --- | --- |
@@ -158,7 +157,7 @@ La ejecución del contenedor requiere configurar correctamente la conexión a My
 
 ## Documentación y pruebas
 
-El proyecto incluye SpringDoc OpenAPI. Con el servicio iniciado, comprueba la ruta de Swagger UI configurada (habitualmente `/swagger-ui/index.html`) y el documento OpenAPI (habitualmente `/v3/api-docs`).
+La API puede probarse manualmente con Postman, Insomnia u otro cliente HTTP. Swagger UI no está implementado actualmente.
 
 Pruebas manuales recomendadas:
 
