@@ -76,6 +76,44 @@ public class ProductoService {
         return ProductoMapper.toResponse(producto);
     }
 
+    /**
+     * Listado administrativo: incluye productos activos e inactivos.
+     * No debe exponerse en el catalogo publico.
+     */
+    @Transactional(readOnly = true)
+    public List<ProductoResponseDTO> listarAdmin() {
+        log.info("Listando todos los productos (administracion)");
+        return productoRepository.findAllByOrderByNombreAsc()
+                .stream()
+                .map(ProductoMapper::toResponse)
+                .toList();
+    }
+
+    @Transactional(readOnly = true)
+    public Page<ProductoResponseDTO> listarAdminPaginado(int page, int size) {
+        int pagina = Math.max(page, 0);
+        int tamano = Math.min(Math.max(size, 1), 100);
+
+        PageRequest pageable = PageRequest.of(pagina, tamano);
+
+        return productoRepository.findAllPaginado(pageable)
+                .map(ProductoMapper::toResponse);
+    }
+
+    /**
+     * Detalle administrativo: permite consultar un producto inactivo.
+     */
+    @Transactional(readOnly = true)
+    public ProductoResponseDTO obtenerAdminPorCodigo(String codigo) {
+        String codigoNormalizado = normalizarCodigo(codigo);
+        log.info("Buscando producto (administracion) con codigo {}", codigoNormalizado);
+
+        Producto producto = productoRepository.findByCodigo(codigoNormalizado)
+                .orElseThrow(() -> new ResourceNotFoundException("Producto no encontrado"));
+
+        return ProductoMapper.toResponse(producto);
+    }
+
     @Transactional(readOnly = true)
     public List<ProductoResponseDTO> listarOfertas() {
         log.info("Listando productos en oferta");

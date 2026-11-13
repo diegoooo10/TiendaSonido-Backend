@@ -44,15 +44,32 @@ class CategoriaServiceTest {
     }
 
     @Test
-    @DisplayName("listar categorias")
+    @DisplayName("listar categorias publicas consulta solo activas")
     void listarCategorias() {
-        when(categoriaRepository.findAllByOrderByNombreAsc()).thenReturn(List.of(categoria()));
+        when(categoriaRepository.findByActivoTrueOrderByNombreAsc()).thenReturn(List.of(categoria()));
 
         List<CategoriaResponseDTO> resultado = categoriaService.listar();
 
         assertEquals(1, resultado.size());
         assertEquals("Guitarras Acusticas", resultado.get(0).getNombre());
         assertTrue(resultado.get(0).getActivo());
+    }
+
+    @Test
+    @DisplayName("listar categorias administrativas incluye inactivas")
+    void listarCategoriasAdmin() {
+        Categoria inactiva = categoria();
+        inactiva.setId(2L);
+        inactiva.setNombre("Categoria inactiva");
+        inactiva.setActivo(false);
+
+        when(categoriaRepository.findAllByOrderByNombreAsc())
+                .thenReturn(List.of(inactiva, categoria()));
+
+        List<CategoriaResponseDTO> resultado = categoriaService.listarAdmin();
+
+        assertEquals(2, resultado.size());
+        assertFalse(resultado.get(0).getActivo());
     }
 
     @Test
@@ -113,6 +130,44 @@ class CategoriaServiceTest {
 
         assertEquals("Accesorios", resultado.getNombre());
         assertFalse(resultado.getActivo());
+    }
+
+    @Test
+    @DisplayName("no desactivar categoria con productos activos asociados")
+    void noDesactivarCategoriaConProductosActivos() {
+        Categoria categoria = categoria();
+        CategoriaRequestDTO dto = new CategoriaRequestDTO();
+        dto.setNombre("Guitarras Acusticas");
+        dto.setActivo(false);
+
+        when(categoriaRepository.findById(1L)).thenReturn(Optional.of(categoria));
+        when(categoriaRepository.existsByNombreIgnoreCaseAndIdNot("Guitarras Acusticas", 1L))
+                .thenReturn(false);
+        when(productoRepository.countByCategoriaIdAndActivoTrue(1L)).thenReturn(2L);
+
+        assertThrows(ConflictException.class, () -> categoriaService.actualizar(1L, dto));
+        verify(categoriaRepository, never()).save(any(Categoria.class));
+    }
+
+    @Test
+    @DisplayName("desactivar categoria sin productos activos es permitido")
+    void desactivarCategoriaSinProductosActivos() {
+        Categoria categoria = categoria();
+        CategoriaRequestDTO dto = new CategoriaRequestDTO();
+        dto.setNombre("Guitarras Acusticas");
+        dto.setActivo(false);
+
+        when(categoriaRepository.findById(1L)).thenReturn(Optional.of(categoria));
+        when(categoriaRepository.existsByNombreIgnoreCaseAndIdNot("Guitarras Acusticas", 1L))
+                .thenReturn(false);
+        when(productoRepository.countByCategoriaIdAndActivoTrue(1L)).thenReturn(0L);
+        when(categoriaRepository.save(any(Categoria.class)))
+                .thenAnswer(invocacion -> invocacion.getArgument(0));
+
+        CategoriaResponseDTO resultado = categoriaService.actualizar(1L, dto);
+
+        assertFalse(resultado.getActivo());
+        verify(categoriaRepository).save(categoria);
     }
 
     @Test

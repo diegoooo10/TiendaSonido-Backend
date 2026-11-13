@@ -1,7 +1,11 @@
 package producto_service.security;
 
+import java.nio.charset.StandardCharsets;
 import java.util.Arrays;
 import java.util.List;
+
+import javax.crypto.SecretKey;
+import javax.crypto.spec.SecretKeySpec;
 
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.context.annotation.Bean;
@@ -11,8 +15,12 @@ import org.springframework.security.config.Customizer;
 import org.springframework.security.config.annotation.web.builders.HttpSecurity;
 import org.springframework.security.config.annotation.web.configurers.AbstractHttpConfigurer;
 import org.springframework.security.config.http.SessionCreationPolicy;
+import org.springframework.security.oauth2.jose.jws.MacAlgorithm;
+import org.springframework.security.oauth2.jwt.JwtDecoder;
+import org.springframework.security.oauth2.jwt.NimbusJwtDecoder;
+import org.springframework.security.oauth2.server.resource.authentication.JwtAuthenticationConverter;
+import org.springframework.security.oauth2.server.resource.authentication.JwtGrantedAuthoritiesConverter;
 import org.springframework.security.web.SecurityFilterChain;
-import org.springframework.security.web.authentication.UsernamePasswordAuthenticationFilter;
 import org.springframework.web.cors.CorsConfiguration;
 import org.springframework.web.cors.CorsConfigurationSource;
 import org.springframework.web.cors.UrlBasedCorsConfigurationSource;
@@ -20,7 +28,6 @@ import org.springframework.web.cors.UrlBasedCorsConfigurationSource;
 @Configuration
 public class SecurityConfig {
 
-    private final JwtAuthenticationFilter jwtAuthenticationFilter;
     private final RestAuthenticationEntryPoint authenticationEntryPoint;
     private final RestAccessDeniedHandler accessDeniedHandler;
 
@@ -28,11 +35,9 @@ public class SecurityConfig {
     private String corsAllowedOrigins;
 
     public SecurityConfig(
-            JwtAuthenticationFilter jwtAuthenticationFilter,
             RestAuthenticationEntryPoint authenticationEntryPoint,
             RestAccessDeniedHandler accessDeniedHandler
     ) {
-        this.jwtAuthenticationFilter = jwtAuthenticationFilter;
         this.authenticationEntryPoint = authenticationEntryPoint;
         this.accessDeniedHandler = accessDeniedHandler;
     }
@@ -60,24 +65,69 @@ public class SecurityConfig {
                                 "/error"
                         ).permitAll()
 
-                        // Catalogo publico
-                        .requestMatchers(HttpMethod.GET, "/api/productos/**").permitAll()
-                        .requestMatchers(HttpMethod.GET, "/api/categorias/**").permitAll()
+                        // Endpoints administrativos: deben declararse antes que el catalogo publico.
+                        .requestMatchers("/api/productos/admin", "/api/productos/admin/**")
+                        .hasRole(Roles.ADMIN)
+                        .requestMatchers("/api/categorias/admin", "/api/categorias/admin/**")
+                        .hasRole(Roles.ADMIN)
+
+                        // Catalogo publico: productos, categorias y disponibilidad.
+                        .requestMatchers(HttpMethod.GET, "/api/productos/**", "/api/categorias/**").permitAll()
                         .requestMatchers(HttpMethod.GET, "/api/inventario/disponibilidad/**").permitAll()
 
-                        // Categorias: solo administracion
-                        .requestMatchers(HttpMethod.POST, "/api/categorias/**").hasAnyRole(Roles.ADMIN)
-                        .requestMatchers(HttpMethod.PUT, "/api/categorias/**").hasAnyRole(Roles.ADMIN)
-                        .requestMatchers(HttpMethod.DELETE, "/api/categorias/**").hasAnyRole(Roles.ADMIN)
+                        // Productos: solo ADMIN puede crear, actualizar o desactivar.
+                        .requestMatchers(HttpMethod.POST, "/api/productos/**").hasRole(Roles.ADMIN)
+                        .requestMatchers(HttpMethod.PUT, "/api/productos/**").hasRole(Roles.ADMIN)
+                        .requestMatchers(HttpMethod.DELETE, "/api/productos/**").hasRole(Roles.ADMIN)
 
-                        // Productos e inventario: administracion y ventas
-                        .requestMatchers("/api/productos/**").hasAnyRole(Roles.GESTION)
-                        .requestMatchers("/api/inventario/**").hasAnyRole(Roles.GESTION)
+                        // Categorias: solo ADMIN.
+                        .requestMatchers(HttpMethod.POST, "/api/categorias/**").hasRole(Roles.ADMIN)
+                        .requestMatchers(HttpMethod.PUT, "/api/categorias/**").hasRole(Roles.ADMIN)
+                        .requestMatchers(HttpMethod.DELETE, "/api/categorias/**").hasRole(Roles.ADMIN)
+
+                        // Inventario y reservas: ADMIN y EMPLEADO.
+                        .requestMatchers("/api/inventario/**").hasAnyRole(Roles.ADMIN, Roles.EMPLEADO)
 
                         .anyRequest().authenticated()
                 )
-                .addFilterBefore(jwtAuthenticationFilter, UsernamePasswordAuthenticationFilter.class)
+                .oauth2ResourceServer(oauth2 -> oauth2
+                        .authenticationEntryPoint(authenticationEntryPoint)
+                        .accessDeniedHandler(accessDeniedHandler)
+                        .jwt(jwt -> jwt.jwtAuthenticationConverter(jwtAuthenticationConverter()))
+                )
                 .build();
+    }
+
+    /**
+     * Valida los JWT emitidos por usuario-service con el mismo contrato:
+     * HS256, secreto compartido por variable de entorno y claim "rol".
+     */
+    @Bean
+    public JwtDecoder jwtDecoder(@Value("${jwt.secret}") String secret) {
+        if (secret == null || secret.isBlank()) {
+            throw new IllegalStateException("jwt.secret es obligatorio");
+        }
+
+        byte[] secretBytes = secret.getBytes(StandardCharsets.UTF_8);
+        if (secretBytes.length < 32) {
+            throw new IllegalStateException("jwt.secret debe tener al menos 32 bytes");
+        }
+
+        SecretKey key = new SecretKeySpec(secretBytes, "HmacSHA256");
+        return NimbusJwtDecoder.withSecretKey(key)
+                .macAlgorithm(MacAlgorithm.HS256)
+                .build();
+    }
+
+    @Bean
+    public JwtAuthenticationConverter jwtAuthenticationConverter() {
+        JwtGrantedAuthoritiesConverter authoritiesConverter = new JwtGrantedAuthoritiesConverter();
+        authoritiesConverter.setAuthoritiesClaimName("rol");
+        authoritiesConverter.setAuthorityPrefix("ROLE_");
+
+        JwtAuthenticationConverter jwtConverter = new JwtAuthenticationConverter();
+        jwtConverter.setJwtGrantedAuthoritiesConverter(authoritiesConverter);
+        return jwtConverter;
     }
 
     @Bean
@@ -89,13 +139,15 @@ public class SecurityConfig {
 
         CorsConfiguration configuracion = new CorsConfiguration();
         configuracion.setAllowedOrigins(origenes);
-        configuracion.setAllowedMethods(List.of("GET", "POST", "PUT", "DELETE", "OPTIONS"));
+        configuracion.setAllowedMethods(List.of("GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"));
         configuracion.setAllowedHeaders(List.of(
                 "Authorization",
                 "Content-Type",
                 "Accept",
                 "Origin",
-                "X-Requested-With"
+                "X-Requested-With",
+                "Cache-Control",
+                "Pragma"
         ));
         configuracion.setExposedHeaders(List.of("Location"));
         configuracion.setAllowCredentials(false);

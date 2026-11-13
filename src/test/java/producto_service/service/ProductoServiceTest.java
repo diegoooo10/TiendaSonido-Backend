@@ -20,6 +20,8 @@ import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
+import org.springframework.data.domain.PageImpl;
+import org.springframework.data.domain.Pageable;
 
 import producto_service.config.InventarioProperties;
 import producto_service.dto.ProductoRequestDTO;
@@ -237,6 +239,50 @@ class ProductoServiceTest {
         when(categoriaRepository.existsById(99L)).thenReturn(false);
 
         assertThrows(ResourceNotFoundException.class, () -> productoService.buscarPorCategoria(99L));
+    }
+
+    @Test
+    @DisplayName("listado administrativo incluye productos activos e inactivos")
+    void listarAdminIncluyeInactivos() {
+        Producto activo = producto(categoria(), "GA001", new BigDecimal("1000.00"));
+        Producto inactivo = producto(categoria(), "GA002", new BigDecimal("2000.00"));
+        inactivo.setActivo(false);
+
+        when(productoRepository.findAllByOrderByNombreAsc()).thenReturn(List.of(activo, inactivo));
+
+        List<ProductoResponseDTO> resultado = productoService.listarAdmin();
+
+        assertEquals(2, resultado.size());
+        assertTrue(resultado.get(0).getActivo());
+        assertFalse(resultado.get(1).getActivo());
+    }
+
+    @Test
+    @DisplayName("listado administrativo paginado delega en el repositorio")
+    void listarAdminPaginado() {
+        Producto producto = producto(categoria(), "GA001", new BigDecimal("1000.00"));
+
+        when(productoRepository.findAllPaginado(any(Pageable.class)))
+                .thenReturn(new PageImpl<>(List.of(producto)));
+
+        var resultado = productoService.listarAdminPaginado(0, 20);
+
+        assertEquals(1, resultado.getTotalElements());
+        assertEquals("GA001", resultado.getContent().get(0).getCodigo());
+    }
+
+    @Test
+    @DisplayName("detalle administrativo encuentra productos inactivos")
+    void obtenerAdminPorCodigoInactivo() {
+        Producto inactivo = producto(categoria(), "GA002", new BigDecimal("1000.00"));
+        inactivo.setActivo(false);
+
+        when(productoRepository.findByCodigo("GA002")).thenReturn(Optional.of(inactivo));
+
+        ProductoResponseDTO resultado = productoService.obtenerAdminPorCodigo("ga002");
+
+        assertEquals("GA002", resultado.getCodigo());
+        assertFalse(resultado.getActivo());
     }
 
     @Test

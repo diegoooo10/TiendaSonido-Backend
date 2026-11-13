@@ -78,11 +78,11 @@ public class InventarioService {
         String codigoNormalizado = normalizarCodigo(codigo);
         log.info("Actualizando stock fisico del producto {}", codigoNormalizado);
 
-        Producto producto = productoRepository.findByCodigo(codigoNormalizado)
-                .orElseThrow(() -> new ResourceNotFoundException("Producto no encontrado"));
-
         Inventario inventario = inventarioRepository.findByProductoCodigoForUpdate(codigoNormalizado)
                 .orElseGet(() -> {
+                    Producto producto = productoRepository.findByCodigo(codigoNormalizado)
+                            .orElseThrow(() -> new ResourceNotFoundException("Producto no encontrado"));
+
                     Inventario nuevo = new Inventario();
                     nuevo.setProducto(producto);
                     nuevo.setStockFisico(0);

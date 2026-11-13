@@ -1,95 +1,164 @@
 # Verificacion - Producto Service
 
-Fecha de verificacion: **2026-11-10 / 2026-11-11** (hora local del equipo).
+Fecha de la verificacion de la migracion JWT y roles: **2026-11-11** (hora local del equipo).
 
 Este documento registra lo que se ejecuto realmente y lo que no pudo verificarse.
 
 ---
 
-## 1. Compilacion
+## 1. Compilacion y pruebas actuales
 
 ```powershell
-.\mvnw.cmd clean package
+.\mvnw.cmd clean test
 ```
 
 Resultado observado:
 
 ```text
-Tests run: 56, Failures: 0, Errors: 0, Skipped: 0
-Building jar: ...\target\producto-service-0.0.1-SNAPSHOT.jar
+Tests run: 74, Failures: 0, Errors: 0, Skipped: 0
 BUILD SUCCESS
 ```
 
-El JAR generado se ejecuto posteriormente contra MySQL 8.4.
+El proyecto se compilo con JDK 25 en esta maquina, apuntando a `release 21` segun `pom.xml`.
 
----
-
-## 2. Pruebas automatizadas
-
-Comando:
-
-```powershell
-.\mvnw.cmd test
-```
-
-Resultado por clase:
+### 1.1 Resultado por clase
 
 | Clase | Tests | Fallos | Errores | Omitidos |
 |---|---:|---:|---:|---:|
 | `CatalogoInitializerIntegrationTest` | 1 | 0 | 0 | 0 |
 | `CatalogoResourceTest` | 1 | 0 | 0 | 0 |
 | `ProductoServiceApplicationTests` | 1 | 0 | 0 | 0 |
-| `SecurityIntegrationTest` | 13 | 0 | 0 | 0 |
-| `CategoriaServiceTest` | 7 | 0 | 0 | 0 |
+| `SecurityIntegrationTest` | 23 | 0 | 0 | 0 |
+| `CategoriaServiceTest` | 10 | 0 | 0 | 0 |
 | `InventarioServiceTest` | 8 | 0 | 0 | 0 |
-| `ProductoServiceTest` | 14 | 0 | 0 | 0 |
-| `ReservaConcurrenteIntegrationTest` | 1 | 0 | 0 | 0 |
+| `ProductoServiceTest` | 17 | 0 | 0 | 0 |
+| `ReservaConcurrenteIntegrationTest` | 3 | 0 | 0 | 0 |
 | `ReservaStockServiceTest` | 10 | 0 | 0 | 0 |
-| **Total** | **56** | **0** | **0** | **0** |
+| **Total** | **74** | **0** | **0** | **0** |
 
-Las pruebas de contexto e integracion usan H2 en modo MySQL. Esto no sustituye una prueba contra MySQL real; por eso se agrego la verificacion de la seccion 3.
+Las pruebas de contexto e integracion usan H2 en modo MySQL (`src/test/resources/application-test.properties`).
 
-### Incidencia corregida durante la verificacion
+### 1.2 Cobertura agregada en esta iteracion
 
-Spring Boot 4 usa Jackson 3. El codigo inicial importaba `com.fasterxml.jackson.databind.ObjectMapper` (Jackson 2), por lo que no existia un bean `ObjectMapper` y 16 pruebas fallaban al crear el contexto.
+- Token Nimbus valido firmado con HS256.
+- Subject igual al correo y claim `rol`.
+- Token expirado, firma incorrecta, token sin rol y token malformado.
+- Matriz de roles `ADMIN`, `EMPLEADO` y `CLIENTE` con accesos permitidos y denegados.
+- CRUD administrativo de productos: crear, actualizar, desactivar y reactivar.
+- Consulta administrativa de productos inactivos y paginacion.
+- Consulta administrativa de categorias inactivas.
+- Listado publico de categorias limitado a activas.
+- Desactivacion de categoria con productos activos: `409 Conflict`.
+- Reservas: idempotencia secuencial y concurrente, sobreventa y referencia duplicada entre productos.
+- CORS con `Cache-Control` y `Pragma`.
+
+### 1.3 Incidencia corregida durante la verificacion
+
+La primera version del test de concurrencia con la misma referencia fallaba con:
+
+```text
+ObjectOptimisticLockingFailureException:
+Query result contains conflicting version of entity already held in persistence context
+```
+
+Causa: la consulta inicial del producto cargaba `Inventario` en el contexto de persistencia y, tras esperar el bloqueo pesimista, la fila tenia una version nueva.
 
 Correccion aplicada:
 
-- Dependencia `spring-boot-starter-jackson`.
-- Imports migrados a `tools.jackson.databind.ObjectMapper` y `tools.jackson.core.type.TypeReference` en el codigo de la aplicacion y en `CatalogoResourceTest`.
+- La reserva comprueba la existencia/actividad del producto con `existsByCodigoAndActivoTrue`, sin cargar entidades.
+- El inventario se obtiene directamente con `findByProductoCodigoForUpdate`.
+- La referencia existente se relee con `findByReferenciaForUpdate` (current read), lo que mantiene la idempotencia concurrente.
 
-Tras la correccion, las 56 pruebas pasaron.
+Tras la correccion, las 74 pruebas pasan.
 
 ---
 
-## 3. Verificacion contra MySQL 8.4 real
+## 2. Migracion JWT
 
-### Entorno
+| Elemento | Estado |
+|---|---|
+| Dependencias JJWT | Eliminadas de `pom.xml` |
+| `JwtService` y `JwtAuthenticationFilter` locales | Eliminados |
+| Validacion | `NimbusJwtDecoder` con `MacAlgorithm.HS256` |
+| Claim de rol | `rol` |
+| Prefijo de autoridades | `ROLE_` |
+| Subject | Correo del usuario |
+| Expiracion | Validada por Spring Security OAuth2 Resource Server |
+| Generacion de tokens | No existe en este servicio |
+| Secreto | `JWT_SECRET` por variable de entorno; `.env` excluido de Git |
+
+La configuracion de referencia de `usuario-service` se consulto en modo lectura. No se modifico ese proyecto.
+
+### 2.1 Secreto local
+
+Se alineo el `JWT_SECRET` del `.env` local de `producto-service` con el valor de referencia de `usuario-service` sin imprimirlo en consola. Verificacion realizada comparando longitud y hash:
+
+```text
+Longitud local: 39 bytes; longitud referencia: 39 bytes
+Coincide: True
+```
+
+El valor real no se incluye en este documento, en README, en archivos de ejemplo ni en el codigo.
+
+> Spring Boot no lee `.env` automaticamente. Para ejecucion local debe exportarse `JWT_SECRET` en la terminal o configurarse en el IDE.
+
+---
+
+## 3. Matriz de roles verificada
+
+| Rol | Productos | Categorias | Inventario | Reservas |
+|---|---|---|---|---|
+| `ADMIN` | CRUD completo, activos e inactivos | CRUD completo, activas e inactivas | Administra | Administra |
+| `EMPLEADO` | Solo lectura del catalogo publico | Solo lectura | Consulta y actualiza stock | Crea, consulta, confirma y libera |
+| `CLIENTE` | Solo lectura del catalogo publico | Solo lectura | Solo disponibilidad publica | Sin acceso |
+
+Los endpoints `/api/productos/admin/**` y `/api/categorias/admin/**` responden `403` para `EMPLEADO` y `CLIENTE`.
+
+---
+
+## 4. Endpoints administrativos agregados
+
+| Metodo | Ruta | Resultado verificado |
+|---|---|---|
+| GET | `/api/productos/admin` | Incluye activos e inactivos |
+| GET | `/api/productos/admin/paginado` | Pagina activos e inactivos |
+| GET | `/api/productos/admin/{codigo}` | Devuelve productos inactivos |
+| GET | `/api/categorias/admin` | Incluye activas e inactivas |
+
+El listado publico `GET /api/categorias` solo devuelve categorias activas.
+
+---
+
+## 5. Regla de categorias y concurrencia
+
+| Escenario | Resultado |
+|---|---|
+| `PUT /api/categorias/{id}` con `activo=false` y productos activos | `409 Conflict` con mensaje comprensible |
+| Desactivar la categoria despues de dar de baja los productos | `200 OK` |
+| Dos reservas simultaneas por la ultima unidad | Solo una reserva creada |
+| Dos reservas simultaneas con la misma referencia y producto | Ambas terminan OK; una sola reserva y un solo descuento |
+| Misma referencia simultanea con productos distintos | Solo una reserva creada; la otra recibe conflicto |
+
+La baja de productos sigue siendo logica (`activo=false`) y conserva el registro historico.
+
+---
+
+## 6. Verificacion historica contra MySQL 8.4 (iteracion anterior)
+
+La siguiente verificacion se realizo antes de la migracion de roles. Se conserva como evidencia historica del catalogo, precios, stock y reservas; **los JWT usados entonces tenian el rol `ADMINISTRADOR`, que ya no es valido** con la matriz actual.
+
+### 6.1 Entorno
 
 - MySQL Community Server **8.4.3** (binarios de Laragon).
 - Instancia temporal aislada en un directorio temporal, puerto **3307**.
 - No se utilizo ni modifico la base de datos existente del usuario.
-- Aplicacion ejecutada con el JAR empaquetado y variables de entorno reales:
+
+### 6.2 Resultados observados
 
 ```text
-DB_URL=jdbc:mysql://127.0.0.1:3307/sonidovivo_productos?...
-DB_USERNAME=root
-DB_PASSWORD=(vacio, solo instancia temporal)
-JWT_SECRET=secreto-de-verificacion-de-32-bytes-o-mas
-SERVER_PORT=18083
-```
+Catalogo procesado: 51 productos en archivo, 51 creados, 0 ya existentes,
+10 categorias nuevas, 51 inventarios nuevos
 
-### 3.1 Carga inicial del catalogo
-
-Log observado en el primer arranque:
-
-```text
-Catalogo procesado: 51 productos en archivo, 51 creados, 0 ya existentes, 10 categorias nuevas, 51 inventarios nuevos
-```
-
-Consultas directas a MySQL:
-
-```text
 productos    51
 categorias   10
 inventarios  51
@@ -97,137 +166,36 @@ stock_total  365
 reservado    0
 ```
 
-API publica:
+Idempotencia al reiniciar:
 
 ```text
-GET /api/productos   -> 51 elementos
-GET /api/categorias  -> 10 elementos
-GET /api/productos/ofertas -> []
+Catalogo procesado: 51 productos en archivo, 0 creados, 51 ya existentes,
+0 categorias nuevas, 0 inventarios nuevos
 ```
 
-Tambien se verifico que los nombres con tildes se almacenan y devuelven en UTF-8 correctamente (por ejemplo `Guitarra Acústica Folk`, `Afinador de Clip`).
+Tambien se verificaron precios, ofertas, actualizacion de stock, baja logica, reservas, confirmacion, liberacion, CORS y Swagger contra esa instancia temporal.
 
-### 3.1.1 Comparacion exacta con el catalogo original
-
-Se comparo `src/main/resources/catalogo/productos.json` contra el archivo original del frontend `src/data/productos.js`, campo por campo (`codigo`, `categoria`, `nombre`, `marca`, `modelo`, `stock`, `precio`, `descripcion`, `imagen`):
-
-```text
-JS_PRODUCTOS=51 JSON_PRODUCTOS=51
-CODIGOS_UNICOS=51 CATEGORIAS=10 STOCK_TOTAL=365
-OFERTAS=0
-DIFERENCIAS=0
-```
-
-No se inventaron productos, precios, codigos ni stock.
-
-### 3.2 Idempotencia al reiniciar
-
-Se detuvo la aplicacion y se inicio de nuevo contra la misma base. Log observado:
-
-```text
-Catalogo procesado: 51 productos en archivo, 0 creados, 51 ya existentes, 0 categorias nuevas, 0 inventarios nuevos
-```
-
-Consultas posteriores:
-
-```text
-productos    51
-categorias   10
-inventarios  51
-stock_total  365
-```
-
-Conclusion: la carga inicial no duplica datos ni sobrescribe stock.
-
-### 3.3 Precios y ofertas
-
-Se creo un producto temporal `ZZTEST` con:
-
-```json
-{
-  "precio": 1000.00,
-  "precioOferta": 800.00,
-  "enOferta": true
-}
-```
-
-Resultado:
-
-- `POST /api/productos` -> `201 Created`.
-- `precioEfectivo` devuelto: **800.00**.
-- `GET /api/productos/ofertas` incluyo el producto.
-- Intento de crear una oferta con `precioOferta=1200` y `precio=1000` -> `400 Bad Request` con mensaje `El precioOferta debe ser menor al precio normal`.
-- `PUT /api/inventario/ZZTEST/stock` con `stockFisico=5` -> `200 OK`, `stockDisponible=5`.
-- `DELETE /api/productos/ZZTEST` -> `204 No Content`.
-- `GET /api/productos/ZZTEST` posterior -> `404 Not Found` (baja logica).
-
-### 3.4 Reservas de stock
-
-Producto usado: `AC006` (stock inicial 20).
-
-| Operacion | Resultado |
-|---|---|
-| `POST /api/inventario/reservas` (cantidad 2) | `201 Created`, `stockDisponible=18` |
-| Repetir exactamente la misma reserva | `200 OK`, sin cambios de stock |
-| Reutilizar referencia con cantidad 3 | `409 Conflict`, mensaje de referencia reutilizada |
-| `POST .../confirmar` | `200 OK`, estado `CONFIRMADA` |
-| `GET /api/inventario/AC006` | `stockFisico=18`, `stockReservado=0`, `stockDisponible=18` |
-| `POST .../liberar` sobre reserva confirmada | `409 Conflict` |
-| `GET /api/inventario/reservas/{referencia}` | estado `CONFIRMADA` |
-
-### 3.5 Seguridad, CORS y documentacion
-
-| Verificacion | Resultado |
-|---|---|
-| `GET /api/inventario` sin token | `401` con JSON de error |
-| `GET /api/inventario` con JWT `ADMINISTRADOR` | `200` |
-| `POST /api/productos` con JWT `CLIENTE` | `403` |
-| `POST /api/productos` con JWT `ADMINISTRADOR` | `201` |
-| `GET /api/categorias` con `Origin: http://localhost:5173` | `Access-Control-Allow-Origin: http://localhost:5173` |
-| `GET /v3/api-docs` | `200` |
-| `GET /swagger-ui.html` | `302` (redireccion a la UI) |
-| `DELETE /api/categorias/1` con productos asociados | `409`, no elimina la categoria |
-
-El JWT de verificacion se genero con el mismo contrato de `autenticacion-service`:
-
-```json
-{ "sub": "verificador", "rol": "ADMINISTRADOR", "iat": 0, "exp": 0 }
-```
-
-firmado con HS256 y el secreto compartido. No se modifico `autenticacion-service`.
-
-### 3.6 Conteo final despues de las pruebas manuales
-
-Las pruebas manuales modificaron la instancia temporal (producto temporal y una reserva confirmada):
-
-```text
-total_productos    52
-productos activos  51
-categorias         10
-stock_fisico_total 368  (365 - 2 confirmadas + 5 del producto temporal)
-reservado_total    0
-reservas           1 (PED-VERIF-1-AC006, CONFIRMADA)
-```
-
-La base temporal fue detenida y eliminada al finalizar. No queda ningun proceso MySQL ni aplicacion en ejecucion.
+La instancia temporal fue detenida y eliminada al finalizar. No queda ningun proceso MySQL ni aplicacion en ejecucion por parte de esta verificacion.
 
 ---
 
-## 4. Verificaciones no realizadas
+## 7. Verificaciones no realizadas
 
 | Elemento | Estado | Motivo |
 |---|---|---|
 | Build de imagen Docker | **No ejecutado** | El daemon de Docker no estaba disponible (`dockerDesktopLinuxEngine` no encontrado) |
 | `docker compose up` | **No ejecutado** | Misma causa |
-| Prueba con Laragon sobre la base real del usuario | **No ejecutada** | Se uso una instancia temporal aislada para no tocar datos existentes |
+| Prueba contra la base MySQL real del usuario | **No ejecutada en esta iteracion** | Se uso H2 para las pruebas automatizadas y se evito tocar datos existentes |
 | Migraciones Flyway/Liquibase | **No implementadas** | Fuera del alcance solicitado; se usa `ddl-auto=update` en desarrollo |
-| Roles `ADMINISTRADOR`/`VENDEDOR`/`CLIENTE` emitidos por autenticacion-service | **Pendiente en autenticacion-service** | Ese servicio aun emite `ADMIN` y `EMPLEADO`; aqui se aceptan ambos esquemas |
+| Ruta de `usuario-service` en el API Gateway | **Pendiente del responsable del Gateway** | El Gateway no expone actualmente `/api/v1/tienda-sonido/**` para `usuario-service`; no se modifico ese proyecto |
 
 ---
 
-## 5. Conclusiones
+## 8. Conclusiones
 
-- La aplicacion compila y las **56 pruebas automatizadas pasan**.
-- La carga del catalogo oficial fue verificada contra **MySQL 8.4 real**: 51 productos, 10 categorias, 51 inventarios y 365 unidades, con idempotencia al reiniciar.
-- Los flujos de precios, ofertas, stock, reservas, confirmacion, liberacion, seguridad, CORS y Swagger fueron ejercitados contra MySQL real.
-- Las unicas verificaciones pendientes son las relacionadas con Docker (daemon no disponible) y la migracion de nombres de rol en `autenticacion-service`.
+- La aplicacion compila y las **74 pruebas automatizadas pasan**.
+- La validacion JWT migro a Spring Security OAuth2 Resource Server con Nimbus y HS256, sin generacion de tokens.
+- La matriz de roles quedo limitada a `ADMIN`, `EMPLEADO` y `CLIENTE`.
+- Los endpoints administrativos y la regla `409` de categorias estan cubiertos por pruebas.
+- La concurrencia de reservas quedo cubierta con tres escenarios.
+- Docker no pudo verificarse en ejecucion porque el daemon no estaba disponible.

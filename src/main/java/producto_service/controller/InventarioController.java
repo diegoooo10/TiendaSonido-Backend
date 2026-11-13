@@ -41,7 +41,7 @@ public class InventarioController {
     private final InventarioService inventarioService;
     private final ReservaStockService reservaStockService;
 
-    @Operation(summary = "Consultar inventario general", description = "Requiere rol ADMINISTRADOR, VENDEDOR o compatibilidad ADMIN/EMPLEADO.")
+    @Operation(summary = "Consultar inventario general", description = "Requiere rol ADMIN o EMPLEADO.")
     @SecurityRequirement(name = "bearerAuth")
     @ApiResponse(responseCode = "200", description = "Inventario obtenido correctamente")
     @GetMapping
@@ -75,7 +75,7 @@ public class InventarioController {
         return ResponseEntity.ok(inventario);
     }
 
-    @Operation(summary = "Actualizar stock fisico", description = "Requiere rol ADMINISTRADOR o VENDEDOR. No permite dejar el stock fisico bajo el reservado.")
+    @Operation(summary = "Actualizar stock fisico", description = "Requiere rol ADMIN o EMPLEADO. No permite dejar el stock fisico bajo el reservado.")
     @SecurityRequirement(name = "bearerAuth")
     @ApiResponses({
             @ApiResponse(responseCode = "200", description = "Stock actualizado"),
@@ -93,7 +93,7 @@ public class InventarioController {
         return ResponseEntity.ok(inventario);
     }
 
-    @Operation(summary = "Reservar stock para un pedido", description = "Operacion idempotente por referencia. Requiere rol ADMINISTRADOR o VENDEDOR.")
+    @Operation(summary = "Reservar stock para un pedido", description = "Operacion idempotente por referencia. Requiere rol ADMIN o EMPLEADO.")
     @SecurityRequirement(name = "bearerAuth")
     @ApiResponses({
             @ApiResponse(responseCode = "201", description = "Reserva creada"),

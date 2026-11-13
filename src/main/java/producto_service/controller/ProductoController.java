@@ -73,6 +73,61 @@ public class ProductoController {
         return ResponseEntity.ok(PageResponseDTO.from(pagina));
     }
 
+    @Operation(
+            summary = "Listar todos los productos (administracion)",
+            description = "Requiere rol ADMIN. Incluye productos activos e inactivos."
+    )
+    @SecurityRequirement(name = "bearerAuth")
+    @ApiResponses({
+            @ApiResponse(responseCode = "200", description = "Listado obtenido correctamente"),
+            @ApiResponse(responseCode = "401", description = "No autenticado"),
+            @ApiResponse(responseCode = "403", description = "Sin permisos")
+    })
+    @GetMapping("/admin")
+    public ResponseEntity<List<ProductoResponseDTO>> listarAdmin() {
+        List<ProductoResponseDTO> productos = productoService.listarAdmin();
+        productos.forEach(this::agregarLinksAdmin);
+        return ResponseEntity.ok(productos);
+    }
+
+    @Operation(
+            summary = "Listar todos los productos con paginacion (administracion)",
+            description = "Requiere rol ADMIN. Incluye productos activos e inactivos."
+    )
+    @SecurityRequirement(name = "bearerAuth")
+    @ApiResponses({
+            @ApiResponse(responseCode = "200", description = "Pagina obtenida correctamente"),
+            @ApiResponse(responseCode = "401", description = "No autenticado"),
+            @ApiResponse(responseCode = "403", description = "Sin permisos")
+    })
+    @GetMapping("/admin/paginado")
+    public ResponseEntity<PageResponseDTO<ProductoResponseDTO>> listarAdminPaginado(
+            @RequestParam(defaultValue = "0") int page,
+            @RequestParam(defaultValue = "20") int size
+    ) {
+        Page<ProductoResponseDTO> pagina = productoService.listarAdminPaginado(page, size);
+        pagina.getContent().forEach(this::agregarLinksAdmin);
+        return ResponseEntity.ok(PageResponseDTO.from(pagina));
+    }
+
+    @Operation(
+            summary = "Obtener un producto por codigo (administracion)",
+            description = "Requiere rol ADMIN. Permite consultar productos inactivos."
+    )
+    @SecurityRequirement(name = "bearerAuth")
+    @ApiResponses({
+            @ApiResponse(responseCode = "200", description = "Producto encontrado"),
+            @ApiResponse(responseCode = "401", description = "No autenticado"),
+            @ApiResponse(responseCode = "403", description = "Sin permisos"),
+            @ApiResponse(responseCode = "404", description = "Producto no encontrado")
+    })
+    @GetMapping("/admin/{codigo}")
+    public ResponseEntity<ProductoResponseDTO> obtenerAdmin(@PathVariable String codigo) {
+        ProductoResponseDTO producto = productoService.obtenerAdminPorCodigo(codigo);
+        agregarLinksAdmin(producto);
+        return ResponseEntity.ok(producto);
+    }
+
     @Operation(summary = "Listar productos en oferta")
     @SecurityRequirements
     @ApiResponse(responseCode = "200", description = "Ofertas obtenidas correctamente")
@@ -109,7 +164,7 @@ public class ProductoController {
         return ResponseEntity.ok(producto);
     }
 
-    @Operation(summary = "Crear un producto", description = "Requiere rol ADMINISTRADOR o VENDEDOR. El producto nace con stock 0.")
+    @Operation(summary = "Crear un producto", description = "Requiere rol ADMIN. El producto nace con stock 0.")
     @SecurityRequirement(name = "bearerAuth")
     @ApiResponses({
             @ApiResponse(responseCode = "201", description = "Producto creado"),
@@ -125,7 +180,7 @@ public class ProductoController {
         return ResponseEntity.status(HttpStatus.CREATED).body(producto);
     }
 
-    @Operation(summary = "Actualizar un producto por codigo", description = "Requiere rol ADMINISTRADOR o VENDEDOR.")
+    @Operation(summary = "Actualizar un producto por codigo", description = "Requiere rol ADMIN.")
     @SecurityRequirement(name = "bearerAuth")
     @ApiResponses({
             @ApiResponse(responseCode = "200", description = "Producto actualizado"),
@@ -153,6 +208,28 @@ public class ProductoController {
     public ResponseEntity<Void> eliminar(@PathVariable String codigo) {
         productoService.desactivar(codigo);
         return ResponseEntity.noContent().build();
+    }
+
+    private void agregarLinksAdmin(ProductoResponseDTO producto) {
+        producto.add(
+                linkTo(methodOn(ProductoController.class).obtenerAdmin(producto.getCodigo())).withSelfRel()
+        );
+        producto.add(
+                linkTo(methodOn(ProductoController.class).listarAdmin()).withRel("productos-admin")
+        );
+        producto.add(
+                linkTo(methodOn(ProductoController.class).listar(null, null, null, null)).withRel("productos")
+        );
+        if (producto.getCategoriaId() != null) {
+            producto.add(
+                    linkTo(methodOn(CategoriaController.class).obtener(producto.getCategoriaId()))
+                            .withRel("categoria")
+            );
+        }
+        producto.add(
+                linkTo(methodOn(InventarioController.class).consultarDisponibilidad(producto.getCodigo()))
+                        .withRel("disponibilidad")
+        );
     }
 
     private void agregarLinks(ProductoResponseDTO producto) {

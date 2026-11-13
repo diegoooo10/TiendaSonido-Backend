@@ -28,9 +28,13 @@ public class OpenApiConfig {
                                 ofertas, inventario y reservas de stock.
 
                                 Los endpoints publicos de catalogo no requieren token.
-                                Las operaciones de gestion aceptan los roles ADMINISTRADOR y
-                                VENDEDOR, ademas de la compatibilidad temporal con ADMIN y
-                                EMPLEADO mientras autenticacion-service migra sus roles.
+                                ADMIN administra productos, categorias, inventario y reservas.
+                                EMPLEADO gestiona inventario y reservas, sin administrar
+                                productos ni categorias.
+                                CLIENTE solo consulta el catalogo publico.
+
+                                Los endpoints /api/productos/admin y /api/categorias/admin
+                                permiten consultar registros inactivos y requieren rol ADMIN.
                                 """)
                         .contact(new Contact().name("Equipo Tienda Sonido Vivo"))
                 )
@@ -47,7 +51,11 @@ public class OpenApiConfig {
                                 .type(SecurityScheme.Type.HTTP)
                                 .scheme("bearer")
                                 .bearerFormat("JWT")
-                                .description("Token JWT emitido por autenticacion-service. Claim de rol: 'rol'.")
+                                .description("""
+                                        Token JWT emitido por usuario-service (HS256).
+                                        Claim de rol: 'rol' con valores ADMIN, EMPLEADO o CLIENTE.
+                                        El subject corresponde al correo del usuario.
+                                        """)
                 );
     }
 }

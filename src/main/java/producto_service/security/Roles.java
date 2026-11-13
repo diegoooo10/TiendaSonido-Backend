@@ -1,18 +1,17 @@
 package producto_service.security;
 
 /**
- * Nombres de rol aceptados por producto-service.
+ * Nombres de rol reales emitidos por usuario-service en el claim "rol".
  *
- * Los roles objetivo del proyecto son ADMINISTRADOR, VENDEDOR y CLIENTE.
- * Mientras autenticacion-service siga emitiendo ADMIN y EMPLEADO, se aceptan
- * tambien esos nombres como compatibilidad temporal. Esta decision debe
- * coordinarse con el responsable de autenticacion antes de retirar el puente.
+ * El contrato del token es unico: ADMIN, EMPLEADO y CLIENTE. Spring Security
+ * agrega el prefijo ROLE_ al construir las autoridades, por lo que las reglas
+ * de autorizacion deben usar hasRole("ADMIN"), etc.
  */
 public final class Roles {
 
-    public static final String[] ADMIN = { "ADMINISTRADOR", "ADMIN" };
-    public static final String[] GESTION = { "ADMINISTRADOR", "VENDEDOR", "ADMIN", "EMPLEADO" };
-    public static final String[] CLIENTE = { "CLIENTE" };
+    public static final String ADMIN = "ADMIN";
+    public static final String EMPLEADO = "EMPLEADO";
+    public static final String CLIENTE = "CLIENTE";
 
     private Roles() {
     }

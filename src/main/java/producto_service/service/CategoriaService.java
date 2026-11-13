@@ -24,9 +24,24 @@ public class CategoriaService {
     private final CategoriaRepository categoriaRepository;
     private final ProductoRepository productoRepository;
 
+    /**
+     * Listado publico: solo categorias activas.
+     */
     @Transactional(readOnly = true)
     public List<CategoriaResponseDTO> listar() {
-        log.info("Listando categorias");
+        log.info("Listando categorias activas");
+        return categoriaRepository.findByActivoTrueOrderByNombreAsc()
+                .stream()
+                .map(CategoriaMapper::toResponse)
+                .toList();
+    }
+
+    /**
+     * Listado administrativo: incluye categorias activas e inactivas.
+     */
+    @Transactional(readOnly = true)
+    public List<CategoriaResponseDTO> listarAdmin() {
+        log.info("Listando todas las categorias (administracion)");
         return categoriaRepository.findAllByOrderByNombreAsc()
                 .stream()
                 .map(CategoriaMapper::toResponse)
@@ -69,6 +84,16 @@ public class CategoriaService {
 
         if (categoriaRepository.existsByNombreIgnoreCaseAndIdNot(nombre, id)) {
             throw new ConflictException("Ya existe una categoria con ese nombre");
+        }
+
+        boolean seEstaDesactivando = dto.getActivo() != null
+                && !dto.getActivo()
+                && Boolean.TRUE.equals(categoria.getActivo());
+
+        if (seEstaDesactivando && productoRepository.countByCategoriaIdAndActivoTrue(id) > 0) {
+            throw new ConflictException(
+                    "No se puede desactivar una categoria con productos activos asociados"
+            );
         }
 
         CategoriaMapper.aplicar(dto, categoria);

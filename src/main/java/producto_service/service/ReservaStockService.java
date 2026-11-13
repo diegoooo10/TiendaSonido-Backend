@@ -48,13 +48,24 @@ public class ReservaStockService {
         log.info("Reservando {} unidades del producto {} para el pedido {} (ref {})",
                 cantidad, codigo, pedidoId, referencia);
 
-        Producto producto = productoRepository.findByCodigoAndActivoTrue(codigo)
-                .orElseThrow(() -> new ResourceNotFoundException("Producto no encontrado o inactivo"));
+        // Comprobacion sin cargar entidades: evita dejar una version obsoleta de
+        // Inventario en el contexto antes de tomar el bloqueo pesimista.
+        if (!productoRepository.existsByCodigoAndActivoTrue(codigo)) {
+            throw new ResourceNotFoundException("Producto no encontrado o inactivo");
+        }
 
         Inventario inventario = inventarioRepository.findByProductoCodigoForUpdate(codigo)
                 .orElseThrow(() -> new ConflictException("El producto no tiene inventario asociado"));
 
-        ReservaStock existente = reservaStockRepository.findByReferencia(referencia).orElse(null);
+        Producto producto = inventario.getProducto();
+        if (producto == null || !Boolean.TRUE.equals(producto.getActivo())) {
+            throw new ResourceNotFoundException("Producto no encontrado o inactivo");
+        }
+
+        // Lectura con bloqueo (current read): si otra transaccion creo la misma
+        // referencia mientras esperabamos el bloqueo del inventario, aqui se ve
+        // el valor confirmado y la operacion sigue siendo idempotente.
+        ReservaStock existente = reservaStockRepository.findByReferenciaForUpdate(referencia).orElse(null);
         if (existente != null) {
             validarMismaReserva(existente, producto, pedidoId, cantidad);
             log.info("Reserva {} ya existia; se devuelve sin modificar stock", referencia);

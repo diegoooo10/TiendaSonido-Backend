@@ -115,7 +115,6 @@ class InventarioServiceTest {
         dto.setStockFisico(20);
         dto.setStockCritico(4);
 
-        when(productoRepository.findByCodigo("GA001")).thenReturn(Optional.of(producto));
         when(inventarioRepository.findByProductoCodigoForUpdate("GA001")).thenReturn(Optional.of(inventario));
         when(inventarioRepository.saveAndFlush(any(Inventario.class)))
                 .thenAnswer(invocacion -> invocacion.getArgument(0));
@@ -136,7 +135,6 @@ class InventarioServiceTest {
         ActualizarStockRequestDTO dto = new ActualizarStockRequestDTO();
         dto.setStockFisico(4);
 
-        when(productoRepository.findByCodigo("GA001")).thenReturn(Optional.of(producto));
         when(inventarioRepository.findByProductoCodigoForUpdate("GA001")).thenReturn(Optional.of(inventario));
 
         assertThrows(ConflictException.class, () -> inventarioService.actualizarStock("GA001", dto));

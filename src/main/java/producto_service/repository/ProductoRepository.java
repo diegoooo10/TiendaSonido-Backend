@@ -22,14 +22,28 @@ public interface ProductoRepository extends JpaRepository<Producto, Long> {
 
     boolean existsByCodigo(String codigo);
 
+    boolean existsByCodigoAndActivoTrue(String codigo);
+
     boolean existsByNombreIgnoreCase(String nombre);
 
     boolean existsByCategoriaId(Long categoriaId);
 
     long countByCategoriaId(Long categoriaId);
 
+    long countByCategoriaIdAndActivoTrue(Long categoriaId);
+
     @EntityGraph(attributePaths = { "categoria", "inventario" })
     List<Producto> findByActivoTrueOrderByNombreAsc();
+
+    /**
+     * Listado administrativo: incluye productos activos e inactivos.
+     */
+    @EntityGraph(attributePaths = { "categoria", "inventario" })
+    List<Producto> findAllByOrderByNombreAsc();
+
+    @EntityGraph(attributePaths = { "categoria", "inventario" })
+    @Query("select p from Producto p order by p.nombre asc")
+    Page<Producto> findAllPaginado(Pageable pageable);
 
     @EntityGraph(attributePaths = { "categoria", "inventario" })
     List<Producto> findByActivoTrueAndCategoriaIdOrderByNombreAsc(Long categoriaId);

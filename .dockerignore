@@ -5,6 +5,7 @@ target/
 .vscode/
 *.iml
 .env
+.env.*
 *.log
 README.md
 docs/

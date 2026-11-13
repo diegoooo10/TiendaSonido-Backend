@@ -4,7 +4,7 @@ Microservicio unificado de **productos, categorias, precios, ofertas, inventario
 
 Este servicio reemplaza la separacion anterior entre `producto-service` e `inventario-service`. Conserva la arquitectura por capas del proyecto original (Controller -> Service -> Repository), DTOs, mappers, validacion, Swagger y manejo centralizado de excepciones.
 
-> **Alcance deliberado:** este microservicio NO implementa autenticacion, login, registro, usuarios, carrito, checkout, pedidos, API Gateway ni service discovery. El token JWT es emitido por `autenticacion-service`.
+> **Alcance deliberado:** este microservicio NO implementa autenticacion, login, registro, usuarios, carrito, checkout, pedidos, API Gateway ni service discovery. El token JWT es emitido por `usuario-service`.
 
 ---
 
@@ -17,12 +17,12 @@ Este servicio reemplaza la separacion anterior entre `producto-service` e `inven
 | Build | Maven Wrapper (`mvnw`) |
 | Persistencia | Spring Data JPA + Hibernate |
 | Base de datos | MySQL 8.x |
-| Seguridad | Spring Security + JWT (JJWT 0.11.5) |
+| Seguridad | Spring Security OAuth2 Resource Server + Nimbus JWT (HS256) |
 | Validacion | Jakarta Bean Validation |
 | Documentacion | springdoc-openapi / Swagger UI |
 | Utilidades | Lombok, Spring HATEOAS |
 
-> Spring Boot 4 usa **Jackson 3** (`tools.jackson.databind.ObjectMapper`) para la serializacion de la aplicacion. El cliente JWT sigue usando Jackson 2 internamente a traves de `jjwt-jackson`.
+> Spring Boot 4 usa **Jackson 3** (`tools.jackson.databind.ObjectMapper`) para la serializacion de la aplicacion. La validacion JWT la realiza Nimbus (`NimbusJwtDecoder`); este servicio no genera tokens.
 
 ---
 
@@ -32,7 +32,9 @@ Este servicio reemplaza la separacion anterior entre `producto-service` e `inven
 backendTiendaSonido/
 |-- Dockerfile
 |-- docker-compose.yml
-|-- .env.example
+|-- .env.example              # Referencia local (sin secretos reales)
+|-- .env.docker.example       # Referencia para Docker Compose
+|-- .gitignore                # Excluye .env y .env.* reales
 |-- db/
 |   `-- init.sql
 |-- pom.xml
@@ -46,7 +48,7 @@ backendTiendaSonido/
 |   |   |   |-- mapper/       # Entidad <-> DTO
 |   |   |   |-- model/        # Producto, Categoria, Inventario, ReservaStock
 |   |   |   |-- repository/   # Repositorios JPA
-|   |   |   |-- security/     # JWT, roles, CORS, handlers 401/403
+|   |   |   |-- security/     # Nimbus JWT, roles, CORS, handlers 401/403
 |   |   |   `-- service/      # Reglas de negocio y transacciones
 |   |   `-- resources/
 |   |       |-- application.properties
@@ -83,7 +85,7 @@ Toda la configuracion sensible se toma de variables de entorno. **No hay secreto
 | `DB_PASSWORD` | No | vacio | Clave de base de datos |
 | `DB_POOL_SIZE` | No | `10` | Tamano maximo del pool Hikari |
 | `DB_POOL_MIN_IDLE` | No | `2` | Conexiones minimas inactivas |
-| `JWT_SECRET` | **Si** | — | Secreto compartido con `autenticacion-service` (minimo 32 bytes) |
+| `JWT_SECRET` | **Si** | — | Secreto HS256 compartido con `usuario-service` (minimo 32 bytes) |
 | `SERVER_PORT` | No | `8083` | Puerto HTTP (provisional) |
 | `CORS_ALLOWED_ORIGINS` | No | `http://localhost:5173,http://localhost:5174,http://localhost:4173` | Origenes permitidos, separados por coma |
 | `CATALOGO_CARGA_INICIAL` | No | `true` | Activa/desactiva la carga idempotente del catalogo |
@@ -95,11 +97,19 @@ Toda la configuracion sensible se toma de variables de entorno. **No hay secreto
 
 ### Nota sobre `JWT_SECRET`
 
-El valor debe ser **identico** al configurado en `autenticacion-service`. Si no coincide, todos los endpoints protegidos responden `401`. No se debe cambiar el contrato del token:
+El valor debe ser **identico** al configurado en `usuario-service`. Si no coincide, todos los endpoints protegidos responden `401`.
 
-- `sub`: nombre de usuario.
-- `rol`: nombre del rol como texto plano (por ejemplo `ADMIN` o `EMPLEADO`).
-- Firma HMAC con el secreto compartido.
+Spring Boot **no lee automaticamente el archivo `.env`**. Para ejecucion local, exporte `JWT_SECRET` en la terminal o configúrelo en el IDE. El `.env` es solo una referencia y esta excluido de Git.
+
+Contrato del token emitido por `usuario-service`:
+
+- Algoritmo: **HS256**.
+- `sub`: correo del usuario.
+- `rol`: nombre del rol como texto plano: `ADMIN`, `EMPLEADO` o `CLIENTE`.
+- `iat` / `exp`: emision y expiracion; la expiracion se valida.
+- Autoridades internas: prefijo `ROLE_` (`ROLE_ADMIN`, `ROLE_EMPLEADO`, `ROLE_CLIENTE`).
+
+Este servicio solo valida tokens; no genera tokens ni implementa login/registro.
 
 ---
 
@@ -125,11 +135,13 @@ Las tablas las crea Hibernate al iniciar (`ddl-auto=update`). El script no crea 
 
 ### 5.2 Variables de entorno en PowerShell
 
+> Recuerde: `mvnw spring-boot:run` **no lee `.env`**. Las variables deben existir en la sesion de la terminal.
+
 ```powershell
 $env:DB_URL="jdbc:mysql://localhost:3306/sonidovivo_productos?useSSL=false&allowPublicKeyRetrieval=true&serverTimezone=UTC&characterEncoding=UTF-8"
 $env:DB_USERNAME="root"
 $env:DB_PASSWORD="tu_clave"
-$env:JWT_SECRET="secreto-de-al-menos-32-bytes-compartido-con-autenticacion"
+$env:JWT_SECRET="secreto-de-al-menos-32-bytes-identico-al-de-usuario-service"
 $env:SERVER_PORT="8083"
 ```
 
@@ -162,16 +174,20 @@ La API queda disponible en `http://localhost:8083`.
 
 ### 6.1 Preparar variables
 
+La configuracion de Docker esta separada de la local:
+
 ```powershell
-Copy-Item .env.example .env
-# Editar .env y definir MYSQL_ROOT_PASSWORD, DB_PASSWORD y JWT_SECRET
+Copy-Item .env.docker.example .env.docker
+# Editar .env.docker y definir MYSQL_ROOT_PASSWORD, DB_PASSWORD y JWT_SECRET
 ```
+
+`.env` (local) y `.env.docker` (Docker) estan excluidos de Git. Solo los archivos `*.example` se versionan.
 
 ### 6.2 Levantar
 
 ```powershell
-docker compose up --build -d
-docker compose logs -f producto-service
+docker compose --env-file .env.docker up --build -d
+docker compose --env-file .env.docker logs -f producto-service
 ```
 
 Servicios:
@@ -183,18 +199,18 @@ Servicios:
 Detener sin borrar datos:
 
 ```powershell
-docker compose down
+docker compose --env-file .env.docker down
 ```
 
-Detener y borrar la base:
+Detener y borrar la base (operacion destructiva, solo para entornos descartables):
 
 ```powershell
-docker compose down -v
+docker compose --env-file .env.docker down -v
 ```
 
 > El `Dockerfile` es multi-etapa: compila con JDK 21 y ejecuta con JRE 21 como usuario no root. La imagen oficial de MySQL no permite `MYSQL_USER=root`; use un usuario dedicado como `sonidovivo`.
 
-> `db/init.sql` crea la base `sonidovivo_productos` con `utf8mb4`. Si cambia `MYSQL_DATABASE` en `.env`, la imagen de MySQL crea la base nueva automaticamente; el script de inicializacion solo afecta a la base con el nombre por defecto.
+> `db/init.sql` crea la base `sonidovivo_productos` con `utf8mb4`. Si cambia `MYSQL_DATABASE` en `.env.docker`, la imagen de MySQL crea la base nueva automaticamente; el script de inicializacion solo afecta a la base con el nombre por defecto.
 
 ---
 
@@ -205,7 +221,7 @@ docker compose down -v
 
 Para probar endpoints protegidos en Swagger:
 
-1. Obtener un token de `autenticacion-service`.
+1. Obtener un token de `usuario-service`.
 2. Pulsar **Authorize**.
 3. Pegar el token (sin la palabra `Bearer`).
 
@@ -244,34 +260,38 @@ Base URL local: `http://localhost:8083`
 | GET | `/api/productos/paginado` | Lista paginada. Parametros: `page`, `size` (max 100) | Publico |
 | GET | `/api/productos/ofertas` | Productos activos con `enOferta=true` | Publico |
 | GET | `/api/productos/categoria/{categoriaId}` | Productos activos de una categoria | Publico |
-| GET | `/api/productos/{codigo}` | Detalle por codigo | Publico |
-| POST | `/api/productos` | Crea producto (stock inicial 0) | ADMINISTRADOR / VENDEDOR |
-| PUT | `/api/productos/{codigo}` | Actualiza producto | ADMINISTRADOR / VENDEDOR |
-| DELETE | `/api/productos/{codigo}` | Baja logica (`activo=false`) | ADMINISTRADOR / VENDEDOR |
+| GET | `/api/productos/{codigo}` | Detalle por codigo (solo activos) | Publico |
+| GET | `/api/productos/admin` | Lista productos activos e inactivos | ADMIN |
+| GET | `/api/productos/admin/paginado` | Lista paginada de activos e inactivos (`page`, `size`) | ADMIN |
+| GET | `/api/productos/admin/{codigo}` | Detalle incluyendo productos inactivos | ADMIN |
+| POST | `/api/productos` | Crea producto (stock inicial 0) | ADMIN |
+| PUT | `/api/productos/{codigo}` | Actualiza o reactiva producto | ADMIN |
+| DELETE | `/api/productos/{codigo}` | Baja logica (`activo=false`) | ADMIN |
 
 ### 9.2 Categorias (`/api/categorias`)
 
 | Metodo | Ruta | Descripcion | Acceso |
 |---|---|---|---|
-| GET | `/api/categorias` | Lista categorias | Publico |
+| GET | `/api/categorias` | Lista solo categorias activas | Publico |
+| GET | `/api/categorias/admin` | Lista categorias activas e inactivas | ADMIN |
 | GET | `/api/categorias/{id}` | Detalle de categoria | Publico |
-| POST | `/api/categorias` | Crea categoria | ADMINISTRADOR |
-| PUT | `/api/categorias/{id}` | Actualiza categoria | ADMINISTRADOR |
-| DELETE | `/api/categorias/{id}` | Elimina solo si no tiene productos | ADMINISTRADOR |
+| POST | `/api/categorias` | Crea categoria | ADMIN |
+| PUT | `/api/categorias/{id}` | Actualiza categoria. Desactivar con productos activos devuelve `409` | ADMIN |
+| DELETE | `/api/categorias/{id}` | Elimina solo si no tiene productos | ADMIN |
 
 ### 9.3 Inventario (`/api/inventario`)
 
 | Metodo | Ruta | Descripcion | Acceso |
 |---|---|---|---|
-| GET | `/api/inventario` | Inventario general | ADMINISTRADOR / VENDEDOR |
+| GET | `/api/inventario` | Inventario general | ADMIN / EMPLEADO |
 | GET | `/api/inventario/disponibilidad/{codigo}` | Disponibilidad publica de producto activo | Publico |
-| GET | `/api/inventario/{codigo}` | Inventario por codigo | ADMINISTRADOR / VENDEDOR |
-| PUT | `/api/inventario/{codigo}/stock` | Actualiza stock fisico y umbral critico | ADMINISTRADOR / VENDEDOR |
-| POST | `/api/inventario/reservas` | Crea reserva idempotente | ADMINISTRADOR / VENDEDOR |
-| GET | `/api/inventario/reservas/{referencia}` | Consulta reserva | ADMINISTRADOR / VENDEDOR |
-| GET | `/api/inventario/reservas/pedido/{pedidoId}` | Reservas de un pedido | ADMINISTRADOR / VENDEDOR |
-| POST | `/api/inventario/reservas/{referencia}/confirmar` | Confirma reserva y descuenta stock | ADMINISTRADOR / VENDEDOR |
-| POST | `/api/inventario/reservas/{referencia}/liberar` | Libera reserva sin descontar stock | ADMINISTRADOR / VENDEDOR |
+| GET | `/api/inventario/{codigo}` | Inventario por codigo | ADMIN / EMPLEADO |
+| PUT | `/api/inventario/{codigo}/stock` | Actualiza stock fisico y umbral critico | ADMIN / EMPLEADO |
+| POST | `/api/inventario/reservas` | Crea reserva idempotente | ADMIN / EMPLEADO |
+| GET | `/api/inventario/reservas/{referencia}` | Consulta reserva | ADMIN / EMPLEADO |
+| GET | `/api/inventario/reservas/pedido/{pedidoId}` | Reservas de un pedido | ADMIN / EMPLEADO |
+| POST | `/api/inventario/reservas/{referencia}/confirmar` | Confirma reserva y descuenta stock | ADMIN / EMPLEADO |
+| POST | `/api/inventario/reservas/{referencia}/liberar` | Libera reserva sin descontar stock | ADMIN / EMPLEADO |
 
 ---
 
@@ -333,28 +353,19 @@ El backend es la fuente de verdad del precio efectivo.
 
 ---
 
-## 12. Roles y compatibilidad con autenticacion-service
+## 12. Roles y permisos
 
-Roles objetivo del proyecto:
+Los unicos roles reales son los emitidos por `usuario-service` en el claim `rol`: `ADMIN`, `EMPLEADO` y `CLIENTE`.
 
 | Rol | Permisos |
 |---|---|
-| `ADMINISTRADOR` | Acceso total: productos, categorias, inventario y reservas |
-| `VENDEDOR` | Productos, inventario y reservas; no gestiona categorias |
-| `CLIENTE` | Solo lectura del catalogo publico |
+| `ADMIN` | Acceso total: consultar/crear/actualizar/desactivar/reactivar productos; consultar activos e inactivos; administrar categorias activas e inactivas; administrar inventario y reservas |
+| `EMPLEADO` | Consultar catalogo, categorias y disponibilidad; consultar inventario; actualizar stock; crear, consultar, confirmar y liberar reservas. No puede crear, actualizar ni eliminar productos ni administrar categorias |
+| `CLIENTE` | Solo lectura del catalogo publico: productos, categorias, ofertas y disponibilidad. No modifica productos, categorias ni inventario |
 
-### Diferencia real detectada (importante)
+Los endpoints `/api/productos/admin/**` y `/api/categorias/admin/**` son exclusivos de `ADMIN`; `EMPLEADO` y `CLIENTE` reciben `403`.
 
-`autenticacion-service` **todavia emite** los roles `ADMIN` y `EMPLEADO`, no `ADMINISTRADOR`, `VENDEDOR` ni `CLIENTE`.
-
-Para no romper la integracion y no modificar el servicio de autenticacion, este microservicio acepta temporalmente ambos esquemas:
-
-| Rol emitido hoy | Equivalencia aplicada |
-|---|---|
-| `ADMIN` | `ADMINISTRADOR` |
-| `EMPLEADO` | `VENDEDOR` |
-
-Esta compatibilidad esta centralizada en `security/Roles.java` y debe retirarse cuando `autenticacion-service` migre a los nombres objetivo. **No se invento un rol nuevo ni se cambio el contrato del token.**
+La configuracion esta centralizada en `security/Roles.java` y `security/SecurityConfig.java`. No se aceptan roles inexistentes (`ADMINISTRADOR`, `VENDEDOR`) ni se generan tokens en este servicio.
 
 ---
 
@@ -395,7 +406,7 @@ Esta compatibilidad esta centralizada en `security/Roles.java` y debe retirarse 
 
 ### 13.2 Crear producto
 
-`POST /api/productos` con `Authorization: Bearer <token>` y rol `ADMINISTRADOR` o `VENDEDOR`.
+`POST /api/productos` con `Authorization: Bearer <token>` y rol `ADMIN`.
 
 ```json
 {
@@ -559,7 +570,7 @@ Ejecutar toda la suite:
 Resultado verificado:
 
 ```text
-Tests run: 56, Failures: 0, Errors: 0, Skipped: 0
+Tests run: 74, Failures: 0, Errors: 0, Skipped: 0
 BUILD SUCCESS
 ```
 
@@ -568,15 +579,15 @@ BUILD SUCCESS
 | `CatalogoInitializerIntegrationTest` | 1 |
 | `CatalogoResourceTest` | 1 |
 | `ProductoServiceApplicationTests` | 1 |
-| `SecurityIntegrationTest` | 13 |
-| `CategoriaServiceTest` | 7 |
+| `SecurityIntegrationTest` | 23 |
+| `CategoriaServiceTest` | 10 |
 | `InventarioServiceTest` | 8 |
-| `ProductoServiceTest` | 14 |
-| `ReservaConcurrenteIntegrationTest` | 1 |
+| `ProductoServiceTest` | 17 |
+| `ReservaConcurrenteIntegrationTest` | 3 |
 | `ReservaStockServiceTest` | 10 |
-| **Total** | **56** |
+| **Total** | **74** |
 
-Las pruebas automatizadas usan H2 en modo MySQL (`src/test/resources/application-test.properties`). Ademas se realizo una verificacion manual contra **MySQL 8.4 real**; el detalle y las evidencias estan en [`docs/VERIFICACION.md`](docs/VERIFICACION.md).
+Las pruebas automatizadas usan H2 en modo MySQL (`src/test/resources/application-test.properties`). En una iteracion anterior se realizo una verificacion manual contra **MySQL 8.4 real**; el detalle, las evidencias y las limitaciones actuales estan en [`docs/VERIFICACION.md`](docs/VERIFICACION.md).
 
 ---
 
@@ -584,18 +595,22 @@ Las pruebas automatizadas usan H2 en modo MySQL (`src/test/resources/application
 
 1. **Sin historial de movimientos:** `MovimientoInventario` fue eliminado. Solo existe `ReservaStock` con estados `RESERVADA`, `CONFIRMADA` y `LIBERADA`.
 2. **Puerto 8083 provisional:** se mantiene el puerto del `producto-service` original. El puerto 8084 del antiguo `inventario-service` queda retirado.
-3. **Roles legacy:** `ADMIN` y `EMPLEADO` se aceptan temporalmente por compatibilidad. Requiere coordinacion con el equipo de autenticacion.
-4. **`ddl-auto=update`:** adecuado para desarrollo local. Para produccion se recomienda migraciones versionadas (Flyway/Liquibase), no incluidas en este alcance.
-5. **Sin gateway ni discovery:** el frontend consume este servicio directamente o a traves del gateway que defina el equipo de integracion.
-6. **CORS:** configurado para Vite (`5173`, `5174`) y preview (`4173`). Ajustar `CORS_ALLOWED_ORIGINS` segun el entorno.
-7. **Docker no ejecutado en esta maquina:** el daemon de Docker no estaba disponible durante la verificacion. El `Dockerfile` y `docker-compose.yml` se validaron sintacticamente, pero la imagen no se construyo localmente.
+3. **Roles:** solo se aceptan `ADMIN`, `EMPLEADO` y `CLIENTE`, los roles reales de `usuario-service`. Se eliminaron los roles inexistentes `ADMINISTRADOR` y `VENDEDOR`.
+4. **Baja logica de productos:** `DELETE` marca `activo=false` y conserva el historico. `ADMIN` puede consultar y reactivar el producto.
+5. **Categorias:** el listado publico solo devuelve activas; `ADMIN` consulta todas en `/api/categorias/admin`. Desactivar una categoria con productos activos devuelve `409 Conflict`.
+6. **Reservas concurrentes:** la referencia tiene restriccion unica. La reserva bloquea el inventario y relee la referencia con bloqueo pesimista, por lo que dos reintentos simultaneos de la misma referencia y producto son idempotentes. Si la misma referencia se usa a la vez con productos distintos, solo una reserva se crea y la otra recibe `409`.
+7. **`ddl-auto=update`:** adecuado para desarrollo local. Para produccion se recomienda migraciones versionadas (Flyway/Liquibase), no incluidas en este alcance.
+8. **Sin gateway ni discovery:** el frontend consume este servicio directamente o a traves del gateway que defina el equipo de integracion.
+9. **CORS:** configurado para Vite (`5173`, `5174`) y preview (`4173`). Se permiten `Cache-Control` y `Pragma` en preflight. Ajustar `CORS_ALLOWED_ORIGINS` segun el entorno.
+10. **Docker no ejecutado en esta maquina:** el daemon de Docker no estaba disponible durante la verificacion. El `Dockerfile`, `docker-compose.yml` y `.env.docker.example` se revisaron, pero la imagen no se construyo localmente.
 
 ---
 
 ## 16. Seguridad
 
-- No se almacenan secretos en el codigo ni en el repositorio.
+- No se almacenan secretos reales en el codigo ni en el repositorio.
 - `JWT_SECRET` es obligatorio y se valida al iniciar (minimo 32 bytes).
+- La validacion JWT usa `NimbusJwtDecoder` con HS256, claim `rol`, subject = correo y validacion de expiracion.
 - Los endpoints de escritura requieren JWT valido y rol autorizado.
 - CSRF deshabilitado por ser API stateless.
 - Sesiones stateless; no se usa `HttpSession`.
@@ -619,8 +634,8 @@ Las pruebas automatizadas usan H2 en modo MySQL (`src/test/resources/application
 # Ejecutar JAR
 java -jar target\producto-service-0.0.1-SNAPSHOT.jar
 
-# Docker
-docker compose up --build -d
-docker compose logs -f producto-service
-docker compose down
+# Docker (configuracion separada)
+docker compose --env-file .env.docker up --build -d
+docker compose --env-file .env.docker logs -f producto-service
+docker compose --env-file .env.docker down
 ```

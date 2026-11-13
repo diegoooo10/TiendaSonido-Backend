@@ -46,6 +46,23 @@ public class CategoriaController {
         return ResponseEntity.ok(categorias);
     }
 
+    @Operation(
+            summary = "Listar todas las categorias (administracion)",
+            description = "Requiere rol ADMIN. Incluye categorias activas e inactivas."
+    )
+    @SecurityRequirement(name = "bearerAuth")
+    @ApiResponses({
+            @ApiResponse(responseCode = "200", description = "Listado obtenido correctamente"),
+            @ApiResponse(responseCode = "401", description = "No autenticado"),
+            @ApiResponse(responseCode = "403", description = "Sin permisos")
+    })
+    @GetMapping("/admin")
+    public ResponseEntity<List<CategoriaResponseDTO>> listarAdmin() {
+        List<CategoriaResponseDTO> categorias = categoriaService.listarAdmin();
+        categorias.forEach(this::agregarLinksAdmin);
+        return ResponseEntity.ok(categorias);
+    }
+
     @Operation(summary = "Obtener una categoria por ID")
     @SecurityRequirements
     @ApiResponses({
@@ -59,7 +76,7 @@ public class CategoriaController {
         return ResponseEntity.ok(categoria);
     }
 
-    @Operation(summary = "Crear una categoria", description = "Requiere rol ADMINISTRADOR.")
+    @Operation(summary = "Crear una categoria", description = "Requiere rol ADMIN.")
     @SecurityRequirement(name = "bearerAuth")
     @ApiResponses({
             @ApiResponse(responseCode = "201", description = "Categoria creada"),
@@ -73,7 +90,10 @@ public class CategoriaController {
         return ResponseEntity.status(HttpStatus.CREATED).body(categoria);
     }
 
-    @Operation(summary = "Actualizar una categoria", description = "Requiere rol ADMINISTRADOR.")
+    @Operation(
+            summary = "Actualizar una categoria",
+            description = "Requiere rol ADMIN. No permite desactivar una categoria con productos activos (409)."
+    )
     @SecurityRequirement(name = "bearerAuth")
     @ApiResponses({
             @ApiResponse(responseCode = "200", description = "Categoria actualizada"),
@@ -101,6 +121,22 @@ public class CategoriaController {
     public ResponseEntity<Void> eliminar(@PathVariable Long id) {
         categoriaService.eliminar(id);
         return ResponseEntity.noContent().build();
+    }
+
+    private void agregarLinksAdmin(CategoriaResponseDTO categoria) {
+        categoria.add(
+                linkTo(methodOn(CategoriaController.class).obtener(categoria.getId())).withSelfRel()
+        );
+        categoria.add(
+                linkTo(methodOn(CategoriaController.class).listarAdmin()).withRel("categorias-admin")
+        );
+        categoria.add(
+                linkTo(methodOn(CategoriaController.class).listar()).withRel("categorias")
+        );
+        categoria.add(
+                linkTo(methodOn(ProductoController.class).buscarPorCategoria(categoria.getId()))
+                        .withRel("productos")
+        );
     }
 
     private void agregarLinks(CategoriaResponseDTO categoria) {

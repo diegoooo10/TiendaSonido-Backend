@@ -63,9 +63,9 @@ class ReservaStockServiceTest {
         Producto producto = producto("GA001");
         Inventario inventario = inventario(producto, 10, 0);
 
-        when(productoRepository.findByCodigoAndActivoTrue("GA001")).thenReturn(Optional.of(producto));
+        when(productoRepository.existsByCodigoAndActivoTrue("GA001")).thenReturn(true);
         when(inventarioRepository.findByProductoCodigoForUpdate("GA001")).thenReturn(Optional.of(inventario));
-        when(reservaStockRepository.findByReferencia("REF-1")).thenReturn(Optional.empty());
+        when(reservaStockRepository.findByReferenciaForUpdate("REF-1")).thenReturn(Optional.empty());
         when(inventarioRepository.saveAndFlush(any(Inventario.class)))
                 .thenAnswer(invocacion -> invocacion.getArgument(0));
         when(reservaStockRepository.saveAndFlush(any(ReservaStock.class))).thenAnswer(invocacion -> {
@@ -89,9 +89,9 @@ class ReservaStockServiceTest {
         Producto producto = producto("GA001");
         Inventario inventario = inventario(producto, 2, 1);
 
-        when(productoRepository.findByCodigoAndActivoTrue("GA001")).thenReturn(Optional.of(producto));
+        when(productoRepository.existsByCodigoAndActivoTrue("GA001")).thenReturn(true);
         when(inventarioRepository.findByProductoCodigoForUpdate("GA001")).thenReturn(Optional.of(inventario));
-        when(reservaStockRepository.findByReferencia("REF-1")).thenReturn(Optional.empty());
+        when(reservaStockRepository.findByReferenciaForUpdate("REF-1")).thenReturn(Optional.empty());
 
         assertThrows(
                 ConflictException.class,
@@ -109,9 +109,9 @@ class ReservaStockServiceTest {
         Inventario inventario = inventario(producto, 10, 3);
         ReservaStock existente = reserva(producto, "PED-1", 3, "REF-1", EstadoReserva.RESERVADA);
 
-        when(productoRepository.findByCodigoAndActivoTrue("GA001")).thenReturn(Optional.of(producto));
+        when(productoRepository.existsByCodigoAndActivoTrue("GA001")).thenReturn(true);
         when(inventarioRepository.findByProductoCodigoForUpdate("GA001")).thenReturn(Optional.of(inventario));
-        when(reservaStockRepository.findByReferencia("REF-1")).thenReturn(Optional.of(existente));
+        when(reservaStockRepository.findByReferenciaForUpdate("REF-1")).thenReturn(Optional.of(existente));
 
         ResultadoReserva resultado = reservaStockService.reservar(request("PED-1", "GA001", 3, "REF-1"));
 
@@ -128,9 +128,9 @@ class ReservaStockServiceTest {
         Inventario inventario = inventario(producto, 10, 3);
         ReservaStock existente = reserva(producto, "PED-1", 3, "REF-1", EstadoReserva.RESERVADA);
 
-        when(productoRepository.findByCodigoAndActivoTrue("GA001")).thenReturn(Optional.of(producto));
+        when(productoRepository.existsByCodigoAndActivoTrue("GA001")).thenReturn(true);
         when(inventarioRepository.findByProductoCodigoForUpdate("GA001")).thenReturn(Optional.of(inventario));
-        when(reservaStockRepository.findByReferencia("REF-1")).thenReturn(Optional.of(existente));
+        when(reservaStockRepository.findByReferenciaForUpdate("REF-1")).thenReturn(Optional.of(existente));
 
         assertThrows(
                 ConflictException.class,
@@ -217,7 +217,7 @@ class ReservaStockServiceTest {
     @Test
     @DisplayName("no reservar producto inactivo o inexistente")
     void reservarProductoInactivo() {
-        when(productoRepository.findByCodigoAndActivoTrue("GA001")).thenReturn(Optional.empty());
+        when(productoRepository.existsByCodigoAndActivoTrue("GA001")).thenReturn(false);
 
         assertThrows(
                 ResourceNotFoundException.class,
