@@ -1,6 +1,8 @@
 package tienda_sonido.usuario_service.service;
 
 import java.util.List;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 
 import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.stereotype.Service;
@@ -21,6 +23,8 @@ import tienda_sonido.usuario_service.repository.UsuarioRepository;
 @Service
 public class UsuarioService {
 
+    private static final Logger log = LoggerFactory.getLogger(UsuarioService.class);
+
     private final UsuarioRepository usuarioRepository;
     private final UsuarioMapper usuarioMapper;
     private final PasswordEncoder passwordEncoder;
@@ -39,10 +43,12 @@ public class UsuarioService {
         Usuario nuevoUsuario = usuarioMapper.toEntity(request);
 
         if (usuarioRepository.existsByCorreo(nuevoUsuario.getCorreo())) {
+            log.warn("Intento de utilizar un correo ya registrado");
             throw new UsuarioDuplicadoException("El correo ya está registrado");
         }
 
         if (usuarioRepository.existsByRun(nuevoUsuario.getRun())) {
+            log.warn("Intento de utilizar un RUN ya registrado");
             throw new UsuarioDuplicadoException("El RUN ya está registrado");
         }
 
@@ -51,6 +57,7 @@ public class UsuarioService {
 
         Usuario usuarioGuardado = usuarioRepository.save(nuevoUsuario);
 
+        log.info("Usuario registrado con ID {}", usuarioGuardado.getId());
         UsuarioResponse usuarioRegistrado = usuarioMapper.toResponse(usuarioGuardado);
 
         return usuarioRegistrado;
@@ -61,9 +68,11 @@ public class UsuarioService {
         Usuario usuarioLogin = usuarioRepository.findByCorreo(request.getCorreo()).orElseThrow(() -> new CredencialesInvalidasException("Credenciales incorrectas"));
         
         if (!passwordEncoder.matches(request.getPassword(), usuarioLogin.getPassword())) {
+            log.warn("Intento de inicio de sesión con credenciales incorrectas");
             throw new CredencialesInvalidasException("Credenciales incorrectas");
         }
 
+        log.info("Inicio de sesión correcto para usuario ID {}", usuarioLogin.getId());
         String token = jwtService.generarToken(usuarioLogin);
 
         return new LoginResponse(token);
@@ -74,6 +83,7 @@ public class UsuarioService {
     public UsuarioResponse buscarUsuarioPorId(Long id) {
         Usuario usuario = usuarioRepository.findById(id).orElseThrow(() -> new UsuarioNoEncontradoException("Usuario no encontrado"));
 
+        log.debug("Consulta de usuario ID {}", id);
         return usuarioMapper.toResponse(usuario);
     }
 
@@ -84,6 +94,7 @@ public class UsuarioService {
                                                 .map(usuarioMapper::toResponse)
                                                 .toList();
 
+        log.info("Listado de usuarios consultado: {} registros", listaResponse.size());
         return listaResponse;
     }
 
@@ -91,17 +102,20 @@ public class UsuarioService {
         Usuario usuarioActualizar = usuarioRepository.findById(id).orElseThrow(() -> new UsuarioNoEncontradoException("Usuario no encontrado"));
 
             if (!usuarioActualizar.getCorreo().equals(update.getCorreo()) && usuarioRepository.existsByCorreo(update.getCorreo())) {
-                throw new UsuarioDuplicadoException("El correo ya está registrado");
+                log.warn("Intento de utilizar un correo ya registrado");
+            throw new UsuarioDuplicadoException("El correo ya está registrado");
             }
 
             if (!usuarioActualizar.getRun().equals(update.getRun()) && usuarioRepository.existsByRun(update.getRun())) {
-                throw new UsuarioDuplicadoException("El RUN ya está registrado");
+                log.warn("Intento de utilizar un RUN ya registrado");
+            throw new UsuarioDuplicadoException("El RUN ya está registrado");
             }
         
         usuarioMapper.actualizarUsuario(update, usuarioActualizar);
 
         Usuario usuarioActualizado = usuarioRepository.save(usuarioActualizar);
 
+        log.info("Usuario actualizado ID {}", id);
         return usuarioMapper.toResponse(usuarioActualizado);
     }
 
@@ -112,5 +126,6 @@ public class UsuarioService {
         }
 
         usuarioRepository.deleteById(id);
+        log.info("Usuario eliminado ID {}", id);
     }
 }

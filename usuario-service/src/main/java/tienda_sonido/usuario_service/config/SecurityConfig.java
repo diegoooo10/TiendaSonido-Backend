@@ -55,7 +55,8 @@ public class SecurityConfig {
 
         http.authorizeHttpRequests(auth -> auth
             .requestMatchers("/api/v1/tienda-sonido/registro",
-                             "/api/v1/tienda-sonido/login")
+                             "/api/v1/tienda-sonido/login",
+                             "/swagger-ui/**", "/swagger-ui.html", "/v3/api-docs/**")
                              .permitAll()
 
             .requestMatchers("/api/v1/tienda-sonido/usuarios",
