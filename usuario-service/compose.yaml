@@ -1,0 +1,30 @@
+
+services:
+  mysql-usuarios:
+    image: mysql:8.4
+    environment:
+      MYSQL_ALLOW_EMPTY_PASSWORD: "yes"
+      MYSQL_DATABASE: tienda_usuarios
+    volumes:
+      - datos_usuarios:/var/lib/mysql
+    healthcheck:
+      test: ["CMD-SHELL", "mysqladmin ping -h localhost -uroot"]
+      interval: 10s
+      timeout: 5s
+      retries: 15
+      start_period: 20s
+
+  usuario-service:
+    build: .
+    ports:
+      - "8081:8081"
+    environment:
+      DB_URL: jdbc:mysql://mysql-usuarios:3306/tienda_usuarios
+      DB_USERNAME: root
+      DB_PASSWORD: ""
+    depends_on:
+      mysql-usuarios:
+        condition: service_healthy
+
+volumes:
+  datos_usuarios:
