@@ -1,0 +1,7 @@
+target/
+.git/
+.qodo/
+.idea/
+.vscode/
+*.iml
+README.md
