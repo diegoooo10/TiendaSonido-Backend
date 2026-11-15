@@ -368,16 +368,16 @@ class SecurityIntegrationTest {
     }
 
     @Test
-    @DisplayName("CLIENTE no puede reservar stock")
-    void clienteNoPuedeReservarStock() throws Exception {
+        @DisplayName("CLIENTE puede reservar stock")
+        void clientePuedeReservarStock() throws Exception {
         mockMvc.perform(post("/api/inventario/reservas")
                         .header("Authorization", bearer("CLIENTE"))
                         .contentType(MediaType.APPLICATION_JSON)
                         .content("""
                                 {"pedidoId":"PED-1","codigoProducto":"GA001","cantidad":1,"referencia":"REF-1"}
                                 """))
-                .andExpect(status().isForbidden());
-    }
+                .andExpect(status().isCreated());
+        }
 
     @Test
     @DisplayName("reserva superior al stock disponible retorna 409")

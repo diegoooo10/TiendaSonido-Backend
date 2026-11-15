@@ -85,8 +85,21 @@ public class SecurityConfig {
                         .requestMatchers(HttpMethod.PUT, "/api/categorias/**").hasRole(Roles.ADMIN)
                         .requestMatchers(HttpMethod.DELETE, "/api/categorias/**").hasRole(Roles.ADMIN)
 
-                        // Inventario y reservas: ADMIN y EMPLEADO.
-                        .requestMatchers("/api/inventario/**").hasAnyRole(Roles.ADMIN, Roles.EMPLEADO)
+                        // Reservas: permiso temporal para CLIENTE durante la integracion.
+                        // Permite reservar, confirmar y liberar desde pedido-service.
+                        .requestMatchers(HttpMethod.POST, "/api/inventario/reservas")
+                        .hasAnyRole(Roles.ADMIN, Roles.EMPLEADO, Roles.CLIENTE)
+
+                        .requestMatchers(
+                                HttpMethod.POST,
+                                "/api/inventario/reservas/*/confirmar",
+                                "/api/inventario/reservas/*/liberar"
+                        )
+                        .hasAnyRole(Roles.ADMIN, Roles.EMPLEADO, Roles.CLIENTE)
+
+                        // Inventario y consultas de reservas: ADMIN y EMPLEADO.
+                        .requestMatchers("/api/inventario/**")
+                        .hasAnyRole(Roles.ADMIN, Roles.EMPLEADO)
 
                         .anyRequest().authenticated()
                 )
