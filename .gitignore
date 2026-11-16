@@ -1,0 +1,32 @@
+﻿# Secretos y configuraciones privadas
+.env
+.env.*
+!.env.example
+!.env.docker.example
+
+# Logs
+*.log
+
+# Java y Maven
+**/target/
+**/build/
+*.class
+
+# IDE
+.idea/
+*.iml
+*.iws
+*.ipr
+.settings/
+.classpath
+.project
+.vscode/
+.sts4-cache/
+
+# Sistema operativo
+.DS_Store
+Thumbs.db
+
+# Archivos temporales
+*.tmp
+*.bak

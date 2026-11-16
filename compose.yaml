@@ -1,0 +1,150 @@
+name: sonidovivo
+
+services:
+  mysql-productos:
+    image: mysql:8.4
+    container_name: sonidovivo-mysql-productos
+    restart: unless-stopped
+    environment:
+      MYSQL_ROOT_PASSWORD: ${MYSQL_ROOT_PASSWORD:?Define MYSQL_ROOT_PASSWORD en .env.docker}
+      MYSQL_DATABASE: sonidovivo_productos
+      MYSQL_USER: ${PRODUCTOS_DB_USER:?Define PRODUCTOS_DB_USER en .env.docker}
+      MYSQL_PASSWORD: ${PRODUCTOS_DB_PASSWORD:?Define PRODUCTOS_DB_PASSWORD en .env.docker}
+    ports:
+      - "127.0.0.1:3307:3306"
+    volumes:
+      - productos_data:/var/lib/mysql
+      - ./producto-service/db/init.sql:/docker-entrypoint-initdb.d/01-init.sql:ro
+    healthcheck:
+      test: ["CMD-SHELL", "mysqladmin ping -h 127.0.0.1 -u root -p$$MYSQL_ROOT_PASSWORD --silent"]
+      interval: 5s
+      timeout: 5s
+      retries: 30
+      start_period: 20s
+
+  mysql-pedidos:
+    image: mysql:8.4
+    container_name: sonidovivo-mysql-pedidos
+    restart: unless-stopped
+    environment:
+      MYSQL_ROOT_PASSWORD: ${PEDIDOS_DB_ROOT_PASSWORD:?Define PEDIDOS_DB_ROOT_PASSWORD en .env.docker}
+      MYSQL_DATABASE: sonidovivo_pedidos
+      MYSQL_USER: ${PEDIDOS_DB_USER:?Define PEDIDOS_DB_USER en .env.docker}
+      MYSQL_PASSWORD: ${PEDIDOS_DB_PASSWORD:?Define PEDIDOS_DB_PASSWORD en .env.docker}
+    ports:
+      - "127.0.0.1:3308:3306"
+    volumes:
+      - pedidos_data:/var/lib/mysql
+    healthcheck:
+      test: ["CMD-SHELL", "mysqladmin ping -h 127.0.0.1 -u root -p$$MYSQL_ROOT_PASSWORD --silent"]
+      interval: 5s
+      timeout: 5s
+      retries: 30
+      start_period: 20s
+
+  mysql-usuarios:
+    image: mysql:8.4
+    container_name: sonidovivo-mysql-usuarios
+    restart: unless-stopped
+    environment:
+      MYSQL_ROOT_PASSWORD: ${USUARIOS_DB_ROOT_PASSWORD:?Define USUARIOS_DB_ROOT_PASSWORD en .env.docker}
+      MYSQL_DATABASE: tienda_usuarios
+      MYSQL_USER: ${USUARIOS_DB_USER:?Define USUARIOS_DB_USER en .env.docker}
+      MYSQL_PASSWORD: ${USUARIOS_DB_PASSWORD:?Define USUARIOS_DB_PASSWORD en .env.docker}
+    ports:
+      - "127.0.0.1:3309:3306"
+    volumes:
+      - usuarios_data:/var/lib/mysql
+    healthcheck:
+      test: ["CMD-SHELL", "mysqladmin ping -h 127.0.0.1 -u root -p$$MYSQL_ROOT_PASSWORD --silent"]
+      interval: 5s
+      timeout: 5s
+      retries: 30
+      start_period: 20s
+
+  producto-service:
+    build:
+      context: ./producto-service
+      dockerfile: Dockerfile
+    container_name: sonidovivo-producto-service
+    restart: unless-stopped
+    environment:
+      SERVER_PORT: 8083
+      DB_URL: jdbc:mysql://mysql-productos:3306/sonidovivo_productos?useSSL=false&allowPublicKeyRetrieval=true&serverTimezone=UTC&characterEncoding=UTF-8
+      DB_USERNAME: ${PRODUCTOS_DB_USER}
+      DB_PASSWORD: ${PRODUCTOS_DB_PASSWORD}
+      JWT_SECRET: ${JWT_SECRET:?Define JWT_SECRET en .env.docker}
+      CORS_ALLOWED_ORIGINS: ${CORS_ALLOWED_ORIGINS}
+      CATALOGO_CARGA_INICIAL: "true"
+      JPA_DDL_AUTO: update
+    ports:
+      - "127.0.0.1:8083:8083"
+    depends_on:
+      mysql-productos:
+        condition: service_healthy
+
+  pedido-service:
+    build:
+      context: ./pedido-service
+      dockerfile: Dockerfile
+    container_name: sonidovivo-pedido-service
+    restart: unless-stopped
+    environment:
+      SERVER_PORT: 8082
+      DB_URL: jdbc:mysql://mysql-pedidos:3306/sonidovivo_pedidos?useSSL=false&allowPublicKeyRetrieval=true&serverTimezone=UTC&characterEncoding=UTF-8
+      DB_USERNAME: ${PEDIDOS_DB_USER}
+      DB_PASSWORD: ${PEDIDOS_DB_PASSWORD}
+      JWT_SECRET: ${JWT_SECRET:?Define JWT_SECRET en .env.docker}
+      CORS_ALLOWED_ORIGINS: ${CORS_ALLOWED_ORIGINS}
+      PRODUCTO_SERVICE_URL: http://producto-service:8083
+      JPA_DDL_AUTO: update
+    ports:
+      - "127.0.0.1:8082:8082"
+    depends_on:
+      mysql-pedidos:
+        condition: service_healthy
+      producto-service:
+        condition: service_started
+
+  usuario-service:
+    build:
+      context: ./usuario-service
+      dockerfile: Dockerfile
+    container_name: sonidovivo-usuario-service
+    restart: unless-stopped
+    environment:
+      SERVER_PORT: 8081
+      DB_URL: jdbc:mysql://mysql-usuarios:3306/tienda_usuarios?useSSL=false&allowPublicKeyRetrieval=true&serverTimezone=UTC&characterEncoding=UTF-8
+      DB_USERNAME: ${USUARIOS_DB_USER}
+      DB_PASSWORD: ${USUARIOS_DB_PASSWORD}
+    ports:
+      - "127.0.0.1:8081:8081"
+    depends_on:
+      mysql-usuarios:
+        condition: service_healthy
+
+  gateway:
+    build:
+      context: ./gateway
+      dockerfile: Dockerfile
+    container_name: sonidovivo-gateway
+    restart: unless-stopped
+    environment:
+      PRODUCTO_SERVICE_URL: http://producto-service:8083
+      PEDIDO_SERVICE_URL: http://pedido-service:8082
+      USUARIO_SERVICE_URL: http://usuario-service:8081
+      CORS_ALLOWED_ORIGINS: ${CORS_ALLOWED_ORIGINS}
+    ports:
+      - "8080:8080"
+    depends_on:
+      producto-service:
+        condition: service_started
+      pedido-service:
+        condition: service_started
+      usuario-service:
+        condition: service_started
+
+volumes:
+  productos_data:
+  pedidos_data:
+  usuarios_data:
